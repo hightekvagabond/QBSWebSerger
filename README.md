@@ -2,3 +2,10 @@ This is to build a web server on an EC2 instance in the style of the old Quintes
 servers to transition off of old Virtual Machines and Co-Los, you probably don't care about this.
 
 
+./run.sh
+cd src
+./CreateEC2.py
+
+
+
+
