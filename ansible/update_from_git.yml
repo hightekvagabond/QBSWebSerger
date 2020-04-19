@@ -1,0 +1,4 @@
+- git:
+    repo: https://github.com/hightekvagabond/QBSWebServer.git
+    dest: /home/ubuntu
+    refspec: '+refs/pull/*:refs/heads/*'
