@@ -12,11 +12,13 @@
 
 
     - cron:
-        name: "Cronjob Entry"
-        minute: "19"
-        hour: "*"
+        name: "Cronjob Entry to update nightly"
+        minute: "12"
+        hour: "22"
         day: "*"
         month: "*"
         weekday: "*"
-        job: "touch /home/ubuntu/QBSWebserver/ansible/cronran.touch"
+        job: "/usr/bin/ansible-playbook --connection=local /home/ubuntu/QBSWebServer/ansible/update_from_git.yml"
+        #become_user: "{{ admin_user }}"
+      become_user: "ubuntu"
 ...
