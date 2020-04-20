@@ -5,9 +5,19 @@
   tasks:
 
     - git:
+        name: pull from master
         repo: "https://github.com/hightekvagabond/QBSWebServer.git"
         dest: /home/ubuntu/QBSWebServer
         update: yes
         version: master
-...
 
+
+    - cron:
+        name: "Cronjob Entry"
+        minute: "19"
+        hour: "*"
+        day: "*"
+        month: "*"
+        weekday: "*"
+        job: "touch /home/ubuntu/QBSWebserver/ansible/cronran.touch"
+...

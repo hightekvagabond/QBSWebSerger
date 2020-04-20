@@ -1,0 +1,3 @@
+to run a playbook local:
+
+ansible-playbook --connection=local  repo.yml 
