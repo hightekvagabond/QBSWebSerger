@@ -1,4 +1,11 @@
-- git:
-    repo: https://github.com/hightekvagabond/QBSWebServer.git
-    dest: /home/ubuntu
-    refspec: '+refs/pull/*:refs/heads/*'
+--- 
+# update to most recent version
+- name: update ansible
+  hosts: localhost
+  tasks:
+
+    - git: 
+        repo: "https://github.com/hightekvagabond/QBSWebServer.git"
+        dest: /home/ubuntu/QBSWebServer
+        refspec: "+refs/pull/*:refs/heads/*"
+...
