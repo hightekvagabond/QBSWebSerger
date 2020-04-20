@@ -21,6 +21,7 @@ Built from command line on a Mac with:
     Docker version 19.03.8, build afacb8b
 
 assumptions at the time of this writing (I'll probably forget to update this file):
+
 	1) your .aws credentials are in /root/.aws
 	2) you have a pem in /root/.ssh/ named qbsweb1.pem that matches a keypair named qbswebserver
 
