@@ -1,3 +1,9 @@
 to run a playbook local:
 
 ansible-playbook --connection=local  repo.yml 
+
+
+
+we still need to run this manually on the server to start the cycle of auto updates:
+
+/usr/bin/ansible-playbook --connection=local /home/ubuntu/QBSWebServer/ansible/update_from_git.yml
