@@ -5,7 +5,6 @@
   tasks:
 
     - git:
-        name: pull from master
         repo: "https://github.com/hightekvagabond/QBSWebServer.git"
         dest: /home/ubuntu/QBSWebServer
         update: yes
