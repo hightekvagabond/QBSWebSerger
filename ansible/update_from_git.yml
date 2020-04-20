@@ -13,8 +13,8 @@
 
     - cron:
         name: "Cronjob Entry to update nightly"
-        minute: "12"
-        hour: "22"
+        minute: "33"
+        hour: "4"
         day: "*"
         month: "*"
         weekday: "*"
