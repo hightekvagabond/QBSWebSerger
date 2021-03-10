@@ -1,0 +1,452 @@
+#!/usr/bin/perl
+
+print "\n";
+
+#$data{'ipaddress'} = '216.17.39.50';
+$data{'ipaddress'} = '216.250.162.41';
+$data{'parentserver'} = 'gypsy.org';
+
+
+
+sub gv { print $_[0]; my $x = <STDIN>; chomp $x; return $x; }
+
+
+
+if ($ARGV[0]) { 
+	if ( ($ARGV[0] eq '-?') ||
+		($ARGV[0] eq '?') ||
+		($ARGV[0] eq '--?') ||
+		($ARGV[0] eq '-help') ||
+		($ARGV[0] eq 'help') ||
+		($ARGV[0] eq '--help') ||
+		($ARGV[0] eq '/?') )
+		{
+		print "usage:\n addvs [options] domainanme\n\n\nOptions:\n" . 
+		"\t-dns [y|n]            'y' if the site already has dns setup\n" . 
+		#"\t-customupdate [y|n]   'y' if the site is to be a custom update site\n" . 
+		#"\t-cu [y|n]              Same as -customupdate\n" .
+		"\t-ipaddress <address>   What Address does the site live on\n" .
+		"\t-ip <address>          Same as -ipaddress\n" .
+		"\t-sitetype <skel>       tells us which skel to use\n" .
+		"\t-dbname <name>         Database Name\n" .
+		"\t-mysqldb <name>        MySQL Database Name\n" .
+		"\t-mysqluser <name>	  MYSQL User Name (optional) use -exists at end of the username if the user already exists\n" .
+		"\t-mysqlpass <passwd>	  MYSQL Password  (optional)\n" .
+		"\t-dbexists [y|n]        Say 'y' here if the DB Already exists\n" .
+		"\t-php [y|n]        	  Say 'y' here to enable php\n" .
+		"\t-wordpress [y|n]       Say 'y' here to make a wordpress site (requires mysql, and turns on php)\n" .
+		"\t-pstmstr <passwd>      Password for Postmaster User ('random' for random passwd)\n" .
+		"\t-postmaster <passwd>   Same as -ipaddress\n" .
+		"\t-siteowner <email>     Email Address of the Site Owner\n" .
+		"\t-parentserver <domain> Domain who is parent to this one (will set up ThisDomain.Parent)\n" .
+		"\n\n\n";
+
+		exit(0);
+		}
+
+
+
+
+
+#print "ARGV[0] = $ARGV[0]    ",substr($ARGV[0], 0, 1),"\n";
+	while (substr($ARGV[0], 0, 1) eq '-') {
+		#$dns = "y";
+		#$vsname = lc($ARGV[1]); 
+		my $key = shift(@ARGV);
+		$key = lc(substr($key,1,(length($key) -1)));
+		my $val = lc(shift(@ARGV));
+		$data{$key} = $val;
+		if ($key eq 'ip'){$data{'ipaddress'} = $val;}
+		elsif ($key eq 'pstmstr' || $key eq 'postmaster'){
+				$data{'pstmstr'} = $va;
+				$data{'postmasterpassword'} = $val;
+				$data{'postmaster'} = $val;}
+		elsif ($key eq 'vsname'){$vsname = $val;}
+		elsif ($key eq 'siteowner'){$siteowner = $val;}
+		elsif ($key eq 'domain'){$vsname = $val;}
+		elsif ($key eq 'customupdate' || $key eq 'cu'){
+				$data{'customupdate'} = $val;
+				$data{'customupdate'} = $val;
+					}
+		elsif ($key eq 'dns'){$dns = $val;}
+		elsif ($key eq 'php'){$php = $val;}
+		elsif ($key eq 'wordpress'){$wordpress = $val;}
+		#print "$key:$val\n";
+		}
+	if ($ARGV[0]) { $vsname = lc($ARGV[0]); }
+	}
+else { 
+	if( $ENV{'SSH_CONNECTION'} || $ENV{'SSH_CLIENT'} || $ENV{'SSH_CONNECTION'} || $ENV{'EDITOR'} || $ENV{'MAIL'} || $ENV{'USER'} || $ENV{'LOGNAME'} || $ENV{'SHLVL'} || $ENV{'SHELL'} || $ENV{'TERM'} || $ENV{'PAGER'} || $ENV{'SSH_TTY'}){ die "Don't run this from the shell anymore, use the web tools at /cgi-pub/admin/addvs.cgi"; }
+	$vsname = gv "What is the name of the virtual server?: "; 
+	$data{'parentserver'} = gv "What is the parent domain?($data{'parentserver'}): "; 
+	$data{'ip'} = gv "What is the ip address?($data{'ip'}): "; 
+	$data{'dns'} = gv "Does the domain have dns pointed to $data{'ip'}? (y/n): ";
+	}
+
+
+if (lc($wordpress) eq 'y'){
+	$php = 'y';
+	if (!$data{'mysqldb'}){
+		$data{'mysqldb'} = 'wordpress';
+		}
+	#do the download after the file structure is created
+	}
+
+if (lc($php) eq 'y'){
+	$data{'additional_server_commands'} .= "
+	AddType application/x-httpd-php .php
+        AddType application/x-httpd-php-source .phps";
+	}
+
+
+
+
+
+$data{'postmaster'} = 'random' if !$data{'postmaster'};
+
+$data{'cu'} = 'y' if $data{'sitetype'} eq 'cu';
+
+$data{'vsname'} = $vsname;
+$data{'dbnamestr'} = "\n\tSetEnv DBNAME $data{'dbname'}" if $data{'dbname'};
+
+die "need a vs name" if !$vsname;
+die "need a db name if it is a custom update site" if !$data{'dbname'} && lc($data{'customupdate'}) eq 'y';
+
+print "\nCreating ",$vsname,"\n";
+
+$data{'subserver'} = $vsname;
+$data{'subserver'} =~ s/\.//g;
+$data{'servername'} = $vsname;
+
+
+if ($data{'mysqldb'} eq 'wordpress'){
+	$data{'mysqldb'} = $data{'dbname'} || $data{'subserver'};
+	}
+
+
+
+print STDERR "vs: $vsname\n";
+
+
+#CREATE THE DIRECTORIES THAT THE DOMAIN LIVES IN AND COPY THE SKEL OVER
+print "Making directorie /client/vs/$vsname and adding files and permisions\n";
+system("mkdir /client/vs/$vsname");
+
+
+
+
+#COPY SKELS OVER, IN ORDER STARTING WITH VS AND WORKING UP FROM THE PARENTS TO
+#THE SELECTED TYPE. THIS MEANS THAT IF YOUR TYPE IS "a" AND IT HAS A PARENT OF "b"
+#WHICH IN TURN HAS A PARENT OF "vs" THEN "vs" WILL BE COPIED FIRST, THEN "b", THEN "a"
+#THIS MEANS UNLIMITED PARENTS, AND CHILDREN OVERWRITE PARENTS
+#"vs" is ALWAYS in the list
+$skeldir = '/client/admin/skel';
+if ($data{'sitetype'}){
+        push(@siteliniage,$data{'sitetype'});
+        my $si = $data{'sitetype'};
+        my %siteswechecked = ('vs' => 1);
+        while (-e "$skeldir/$si/etc/parenttype"){
+                $siteswechecked{$si} = 1;
+                open(P,"$skeldir/$si/etc/parenttype");
+                $si = 'vs';
+                while (my $type = <P>){
+                        chomp $type;
+                        $type =~ s/\s*//g;
+                        if (!$siteswechecked{$type} && $type ne 'vs'){
+                                push(@siteliniage,$type);
+                                }
+                        }
+                foreach my $t (@siteliniage){
+                        if (!$siteswechecked{$t}){
+                                $si = $t;
+                                last;
+                                }
+                        }
+
+                }
+        }
+push(@siteliniage,'vs');
+while (my $t = pop @siteliniage){
+        if (-d "$skeldir/$t"){
+                print $t,"\n";
+		system("cp -R $skeldir/$t/* /client/vs/$vsname/");
+                }
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#system("cp -R /client/admin/skel/www /client/vs/$vsname/www/$vsname");
+#system("mkdir /client/vs/$vsname/www/$vsname");
+system("chmod -R 775 /client/vs/$vsname");
+system("chown -R nobody /client/vs/$vsname");
+
+#SET UP THE  CONF FILES FOR THIS DOMAIN
+print "Building the local etc files\n";
+&filereplace("/client/vs/$vsname/etc",%data);
+&filereplace("/client/vs/$vsname/www",%data);
+&filereplace("/client/vs/$vsname/www/Templates",%data);
+
+
+print "Running install scripts\n";
+opendir(DIR, "/client/vs/$vsname/etc/install") || die "can't opendir /client/vs/$vsname/etc/install: $!\n";
+my @files = readdir(DIR);
+closedir DIR;
+foreach my $f (@files){
+	next if $f eq '.';
+	next if $f eq '..';
+	$f =  "/client/vs/$vsname/etc/install/" . $f;
+	$f =~ s/\/\//\//g;
+	print "Running $f\n";
+	`$f`;
+	}
+`/bin/rm -rf /client/vs/$vsname/etc/install`;
+
+
+
+
+
+#SETTING UP DB
+if ($data{'mysqldb'}){
+	print "Adding MYSQL DB $data{'mysqldb'}\n";
+	my $mydbnm  = $data{'mysqldb'} || $data{'subserver'};
+	#system("/usr/local/bin/mysqladmin create $data{'mysqldb'}");
+	open(MYSQLSETUP,">/client/vs/$vsname/mysqlsetup.sql") or die "can't open: /client/vs/$vsname/mysqlsetup.sql: $!\n";
+	print MYSQLSETUP "create database $mydbnm;\n";
+	my $mysqluser =  $data{'mysqluser'} || substr($data{'subserver'},0,15);
+	my $mysqlpass = $data{'mysqlpass'} || randompass();
+	if ($mysqluser =~ /-exists$/){
+		$mysqluser =~ s/-exists//;
+		}
+	else {
+		print MYSQLSETUP "create user '$mysqluser'\@'localhost' IDENTIFIED BY '$mysqlpass';\n";
+		}
+	print MYSQLSETUP "GRANT ALL PRIVILEGES ON $data{'mysqldb'}.* TO '$mysqluser'\@'localhost';\n";
+
+
+	close MYSQLSETUP;
+	system("/bin/cat /client/vs/$vsname/mysqlsetup.sql | /usr/local/bin/mysql");
+	#unlink "/client/vs/$vsname/mysqlsetup.sql";
+
+
+	$data{'mysqldb'} = $mydbnm;
+	$data{'mysqluser'} = $mysqluser;
+	$data{'mysqlpass'} = $mysqlpass;
+
+
+	open(MYSQLETC,">/client/vs/$vsname/etc/mysqluser") or die "Can't open /client/vs/$vsname/etc/mysqluser: $!\n";
+	print MYSQLETC "database: $mydbnm\nusername: $mysqluser\npassword: $mysqlpass\n";
+	close MYSQLETC;
+
+
+
+
+	}
+elsif ($data{'dbname'}){
+	print "Adding PostgreSQL DB $data{'dbname'}\n";
+	system("/usr/local/bin/createdb $data{'dbname'}");
+	}
+
+
+
+#############this should be switched out for an install directory --Gypsy
+#SET UP CUSTOM UPDATE FOR THIS DOMAIN
+if (lc(substr($data{'cu'},0,1)) eq 'y'){ 
+	print "Building Custom update...\n";
+	if (!(lc(substr($data{'dbexists'},0,1)) eq 'y')){ 
+		print "\tBuilding Tables\n";
+		system("/bin/cat /client/vs/$vsname/data/cuskel.pg | /usr/local/bin/psql -d $data{'dbname'}");
+		}
+	print "\tBuilding CONFIG.pl\n";
+	&filereplace("/client/vs/$vsname/cgi/CONFIG.pl",%data);
+	}
+
+
+
+
+# DO SOME LOGGING
+print "Writing to the log file\n";
+open(OUT,">>/client/vs/$vsname/etc/namelist.conf") or die "can't open the server's namelist.conf: $!\n";
+print OUT $vsname,"\nwww.",$vsname,"\n";
+close OUT;
+
+open(OUT,">>/client/etc/addedvs.log") or die "can't open /client/etc/addedvs.log: $!\n";
+print OUT scalar gmtime(time()),"\t",$vsname,"\n";
+close OUT;
+
+
+#CONCATENATE THE NEW CONF FILE ONTO THE APACHE CONF FILE
+print "Adding Local http.conf to the main http.conf\n";
+#`/bin/cat /client/vs/$vsname/etc/http.conf >> /usr/local/etc/apache/httpd.conf`;
+#`/bin/cat /client/vs/$vsname/etc/http.conf >> /client/etc/httpd.conf`;
+#`/bin/cat /client/vs/$vsname/etc/http.conf >> /usr/local/etc/apache/httpd.conf`;
+#`/bin/echo 'Include "/client/vs/$vsname/etc/http.conf"' >> /usr/local/etc/apache/httpd.conf`;
+print system("/bin/ln -s /client/vs/$vsname/etc/http.conf /client/etc/sites/$vsname.enabled");
+
+#CREATE THE EMAIL VS FOR THE DOMAIN
+print "Adding virtual email domain\n";
+#`/home/vpopmail/bin/vadddomain -d /client/vs/$vsname/ $vsname`;
+#`/usr/local/vpopmail/bin/vadddomain -i 65534 -g 65534 -d /client/vs/$vsname/ $vsname`;
+$vadddomaincmd = "/usr/local/vpopmail/bin/vadddomain -i 65534 -g 65534 -d /client/vs/$vsname/ $vsname";
+my $randompass = &randompass();
+$vadddomaincmd .= " postmaster " . $randompass if $data{'postmaster'};
+print "vadddomaincmd: $vadddomaincmd\n";
+print `$vadddomaincmd`;
+#print "check it"; $xxxx = <STDIN>;
+$data{'postmaster'} = $randompass if lc($data{'postmaster'}) eq 'random';
+my $passcmd = "/usr/local/vpopmail/bin/vpasswd postmaster\@$vsname $data{'postmaster'}";
+print STDERR $passcmd,"\n";
+`$passcmd` if $data{'postmaster'};
+
+#SAVE Postmaster PWD for addvscron.pl
+open(PPWD,">/client/vs/$vsname/etc/postmasterpwd");
+print PPWD $randompass;
+close PPWD;
+system("chown nobody  /client/vs/$vsname/etc/postmasterpwd");
+
+
+#save Siteowner emailaddress
+if ($siteowner){
+	open(SO,">/client/vs/$vsname/etc/siteowner");
+	print SO $siteowner;
+	close SO;
+	system("chown nobody  /client/vs/$vsname/etc/siteowner");
+	}
+
+
+system("chmod 775 /client/vs/$vsname/domains/");
+system("chmod 775 /client/vs/$vsname/domains/$vsname");
+
+
+#CREATE the .catchall file for the EMAIL ADMIN SYSTEM
+print "Adding the catchall for the domain\n";
+system("touch /client/vs/$vsname/domains/$vsname/.catchall");
+system("chown nobody /client/vs/$vsname/domains/$vsname/.catchall");
+
+
+
+
+
+#DO DNS 
+open(DNS,">>/etc/namedb/all_domains") or die "can't open all_domains: $!\n";
+print DNS $data{'subserver'},'.',$data{'parentserver'},".\t$data{'ipaddress'}\n";
+print "added to all_domains: ",$data{'subserver'},'.',$data{'parentserver'},".\t$data{'ipaddress'}\n";
+
+if (!(lc(substr($data{'dns'},0,1)) eq "y")){
+	print DNS $vsname,".\t$data{'ipaddress'}\twww.",$vsname,"\n";
+	print "added to all_domains: ",$vsname,".\t$data{'ipaddress'}\twww.",$vsname,"\n";
+
+	}
+print `/etc/namedb/doit`;
+close DNS;
+print "Done Creating Domain.\n";
+print "Restarting Apache\n";
+print `/usr/local/sbin/apachectl graceful`;
+#print `/usr/home/gypsy/wre/wre/sbin/wreservice.pl --restart web spectre`;
+#`cd /usr/client/pub/cgi/wg/sbin/`;
+#print `/usr/local/bin/perl /usr/client/pub/cgi/wg/sbin/spectre.pl --shutdown`;
+#print `/usr/local/bin/perl /usr/client/pub/cgi/wg/sbin/spectre.pl --daemon`;
+`cd /client/admin`;
+#print "Don't forget to restart spectre and apache if it was a wg type: /usr/local/sbin/apachectl \n";
+
+
+
+
+
+
+if (lc($wordpress) eq 'y'){
+	system("/usr/local/bin/wget --output-document='/client/vs/$vsname/www/wordpress_latest.zip' http://wordpress.org/latest.zip");
+	system("/usr/local/bin/unzip /client/vs/$vsname/www/wordpress_latest.zip  -d /client/vs/$vsname/www/");
+	system("/bin/mv /client/vs/$vsname/www/wordpress/* /client/vs/$vsname/www/");
+	system("/usr/bin/touch /client/vs/$vsname/etc/noftp");
+
+	my $mydbname = $data{'mysqldb'};
+	my $mysqluser = $data{'mysqluser'};
+	my $mysqlpass = $data{'mysqlpass'};
+
+	open(WPCNFSMP,"/client/vs/$vsname/www/wp-config-sample.php") or die "Can't open /client/vs/$vsname/www/wp-config-sample.php: $!\n";
+	open(WPCNF,">/client/vs/$vsname/www/wp-config.php") or die "Can't open /client/vs/$vsname/www/wp-config.php: $!\n";
+	while (my $line = <WPCNFSMP>){
+		$line =~ s/database_name_here/$mydbname/g;
+		$line =~ s/username_here/$mysqluser/g;
+		$line =~ s/password_here/$mysqlpass/g;
+#define('DB_NAME', 'database_name_here');
+#define('DB_USER', 'username_here');
+#define('DB_PASSWORD', 'password_here');
+		print WPCNF $line;
+		}
+	close WPCNF;
+	close WPCNFSMP;
+	system("chown -R nobody /client/vs/$vsname/www/");
+	unlink "/client/vs/$vsname/www/index.html";
+	}
+
+
+
+
+sub randompass {
+ my $password;
+ my $_rand;
+
+ my $password_length = $_[0];
+ if (!$password_length) {
+  $password_length = 10;
+ }
+
+ my @chars = split(" ",
+ "a b c d e f g h i j k l m n o
+  p q r s t u v w x y z     
+  0 1 2 3 4 5 6 7 8 9");
+
+ srand;
+
+ for (my $i=0; $i <= $password_length ;$i++) {
+  $_rand = int(rand 41);
+  $password .= $chars[$_rand];
+ }
+ return $password;
+	}
+
+sub filereplace {
+   my ($filename,%data) = @_;
+   if (-d $filename) {
+	opendir(DIR, $filename) || die "can't opendir $some_dir: $!";
+        my @files = readdir(DIR);
+        closedir DIR;
+        foreach my $f (@files){
+                next if $f eq '.';
+                next if $f eq '..';
+                $f = $filename . '/' . $f;
+                $f =~ s/\/\//\//g;
+                &filereplace($f,%data);
+                }
+
+	}
+  else {
+	my $out = "";
+	open(IN,"$filename") or die "can't open $filename: $!\n";
+	while ($line = <IN>){
+		$line =~ s/##(.*?)##/$data{$1}/g;
+		$out .= $line;
+		}
+	close IN;
+	open(OUT,">$filename") or die "can't open $filename: $!\n";
+	print OUT $out;
+	close OUT;
+	}
+}

@@ -1,0 +1,1 @@
+logging/file loglevel LOGINFO /var/log/qpsmtpd/%Y-%m-%d

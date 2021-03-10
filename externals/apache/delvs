@@ -1,0 +1,122 @@
+#!/usr/bin/perl
+
+if ($ARGV[0] eq '-force') {$force = shift @ARGV;}
+if (!$ARGV[0]) {$ARGV[0] = "<domain name>";}
+
+foreach $name (@ARGV){
+
+
+if ($name ne '<domain name>' && (! -d "/client/vs/$name")){
+		print "$name does not EXIST! HIT ENTER TO CONTINUE:";
+		$x = <STDIN>;
+		next;
+		}
+
+#deal with Databases
+#SetEnv DBNAME testdb
+my $dbname = getdbname($name);
+my $multdb = 'false';
+print "dbname is $dbname\n";
+opendir(VS, '/client/vs/') || die("Cannot open vs directory: $!\n"); 
+my @vss = readdir(VS);
+close VS;
+if ($dbname){
+foreach my $vs (@vss){
+	next if ! -e "/client/vs/$vs/etc/http.conf";
+	next if $name eq $vs;
+	if ($dbname eq getdbname($vs)){
+		print "This Domain uses the same database as $vs\n";
+		$multdb = 'true';
+		}
+	}
+
+if ($multdb eq 'false'){
+	my $dumpfile  = '/client/vs/' . $name . '/data/' . $dbname . '_finaldump.pg';
+	print "dumping database $dbname to $dumpfile\n";
+	`/usr/local/bin/pg_dump $dbname > $dumpfile`;
+	print "Database dumped\n";
+	}
+
+}
+
+
+
+
+
+if ($force && $name ne '<domain name>'){
+
+
+      print "archiving the site: $name\n";
+
+
+
+	   my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time());
+        $year = $year + 1900;
+        $mon++;
+
+
+      $archivefile = "archive/$name.full.$year.$mon.$mday.tar.gz";
+      $archivecount = 1;
+      while (-e $archivefile){
+	print STDERR "$archivefile already exists adding count of $count to it\n";
+      	$archivefile = 'archive/' . $name . '.' . $count . '.tar.gz';
+	$count++;
+	}
+
+      `/usr/bin/tar -czf $archivefile /client/vs/$name`;
+      print "Deleting the domain from the email system\n"; 
+      print `/usr/local/vpopmail/bin/vdeldomain $name`;
+      print "Deleting it's directory tree\n";
+      print `rm -rf /client/vs/$name`;
+      if (($multdb eq 'false') && ($dbname ne ''))
+		{ 
+		print "dropping Database $dbname\n";
+		`dropdb $dbname`; 
+		}
+#      system("vi +/$name /usr/local/etc/apache/httpd.conf");
+      system("rm /client/etc/sites/$name.enabled");
+	print "Restarting Apache\n";
+	print `/usr/local/sbin/apachectl restart`;
+      print "Hit Enter to go into the all_domains and delete it manually:";
+	$x = <STDIN>;
+      system("vi +/$name /etc/named/all_domains");
+	print "Restarting DNS\n";
+	`/etc/named/doit`;
+
+	print "\n\nDone with Delete\n\n";
+	}
+else {
+	if (! -d "/client/vs/$name"){
+		print "$name does not EXIST! HIT ENTER TO CONTINUE:";
+		$x = <STDIN>;
+		}
+print "\n\n This proccess is not automated because you want\n" .
+      "to be sure you really want to do it before you do it.\n\n" .
+      "To delete the domain from the email system you type:\n" . 
+      "/usr/local/vpopmail/bin/vdeldomain $name\n\n" .
+      "Then delete it's directory tree with this command:\n" .
+      "rm -rf /client/vs/$name\n\n" .
+      "Then delete it's entry from the apache enabled list and restart the server:\n" .
+      "rm /client/etc/sites/$name.enabled  ; /usr/local/sbin/apachectl restart\n\n" .
+      "Then delete it's entry in the all_domains and restart the dns server:\n" .
+      "vi +/$name /etc/named/all_domains ; /etc/named/doit\n\n";
+      if (($multdb eq 'false') && ($dbname ne ''))
+		{ "Then drop the database with this command:\ndropdb $dbname\n\n"; }
+      print "Thats it.\n\n";
+	}
+print "Don't forget the database\n\n";
+ }
+
+sub getdbname {
+my ($name) = @_;
+my $dbname = '';
+my $httpdconf = "/client/vs/$name/etc/http.conf";
+open(H,$httpdconf) or die "can't open $httpdconf: $!\n";
+while (my $line = <H>){
+	if ($line =~ /^\s*SetEnv\s*?DBNAME\s*?(\w*?)\s*$/){
+		$dbname = $1;
+		}
+	}
+close H;
+return $dbname;
+}

@@ -1,0 +1,14 @@
+[Unit]
+Description=qmail service
+After=local-fs.target network.target svscan.service
+
+[Service]
+ExecStart=/usr/bin/qmailctl start
+ExecStop=/usr/bin/qmailctl stop
+Type=oneshot
+NonBlocking=yes
+RemainAfterExit=yes
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

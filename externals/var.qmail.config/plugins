@@ -1,0 +1,22 @@
+tls /var/qmail/control/servercert.pem /var/qmail/control/servercert.pem /var/qmail/control/servercert.pem
+hosts_allow
+#quit_fortune
+check_earlytalker
+count_unrecognized_commands 4
+check_vpopmail_before_smtp cdb_file /usr/local/vpopmail/etc/tcp.smtp.cdb
+check_relay
+dnsbl disconnect 1
+#rhsbl
+require_resolvable_fromhost
+check_badmailfrom
+check_badrcptto
+check_spamhelo
+rcpt_ok
+ident/p0f /var/run/p0f.sock
+greylisting_win db_dir /var/run/qpsmtpd only_win 0
+spamassassin
+# virus/clamdscan deny_viruses yes clamd_socket /var/run/clamav/clamd.sock
+virus/clamav clamscan_path=/usr/local/bin/clamdscan clamd_conf=/usr/local/etc/clamd.conf action=reject tmp_dir=/var/spool/qpsmtpd
+logging/syslog loglevel LOGWARN facility local3
+queue/smtp-forward localhost 2525
+

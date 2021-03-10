@@ -2,15 +2,35 @@
 # update to most recent version
 - name: update ansible
   hosts: localhost
+  roles:
+    - { role: systemli.spamassassin, become: "yes" }
+    - { role: oefenweb.fail2ban, become: "yes" }
+    - { role: geerlingguy.apache, become: "yes" }
+  vars:
+    git_username: hightekvagabond
+    git_branch: webmail_playbook
+    default_mail_username: ubuntu
+    default_mail_domain: "mailtest.wloch.co"
+    default_mail_address: "{{default_mail_username}}@{{default_mail_domain}}"
+    security_mail_address: "security@{{default_mail_domain}}"
+    # additional domains to define in addition to the default (main)
+    local_mail_domain: "example.domain.com"
+    # apache
+    apache_listen_ip: "*"
+    apache_listen_port: 80
+    apache_listen_port_ssl: 443
+    apache_create_vhosts: true
+    apache_vhosts_filename: "vhosts.conf"
+    apache_remove_default_vhost: true
   tasks:
 
     - git:
-        repo: "https://github.com/hightekvagabond/QBSWebServer.git"
+        repo: "https://github.com/{{ git_username }}/QBSWebServer.git"
         dest: /home/ubuntu/QBSWebServer
         update: yes
-        version: master
+        version: "{{ git_branch }}"
 
-
+    # might be cleaner running it through a system service, default cron implementation doesn't handle reboots well
     - cron:
         name: "Cronjob Entry to update nightly"
         minute: "33"
@@ -21,4 +41,185 @@
         job: "/usr/bin/ansible-playbook --connection=local /home/ubuntu/QBSWebServer/ansible/update_from_git.yml"
         #become_user: "{{ admin_user }}"
       become_user: "ubuntu"
+
+    - name: "Set hostname"
+      become: "yes"
+      hostname:
+        name: "{{ default_mail_domain | replace('\n', '')}}"
+
+      ### QMAIL
+    - name: "QMail installation"
+      become: yes
+      apt:
+        name: "qmail"
+
+    #svscanboot needed to start qmail
+    - name: "svscanboot service install"
+      become: "yes"
+      copy:
+        src: "/home/ubuntu/QBSWebServer/externals/svscan.service"
+        dest: "/lib/systemd/system/svscan.service"
+        owner: root
+        group: root
+        mode: u+rw,g-wx,o-wx
+
+    - name: "svscanboot service configuration"
+      become: "yes"
+      systemd:
+        enabled: yes
+        name: svscan
+        daemon_reload: yes
+
+    #qmail package doesn't include service files as standard
+    - name: "QMail service install"
+      become: "yes"
+      copy:
+        src: "/home/ubuntu/QBSWebServer/externals/qmail.service"
+        dest: "/lib/systemd/system/qmail.service"
+        owner: root
+        group: root
+        mode: u+rw,g-wx,o-wx
+
+    #FIXME: basic configuration to kickstart testing & iterating
+    - block:
+      - name: "QMail abuse alias"
+        become: "yes"
+        copy:
+          content: "{{ security_mail_address }}\n"
+          dest: /var/lib/qmail/alias/.qmail-abuse
+      - name: "QMail hostmaster alias"
+        become: "yes"
+        copy:
+          content: "{{ default_mail_address }}\n"
+          dest: /var/lib/qmail/alias/.qmail-hostmaster
+      - name: "QMail mailer-daemon alias"
+        become: "yes"
+        copy:
+          content: "{{ default_mail_address }}\n"
+          dest: /var/lib/qmail/alias/.qmail-mailer-daemon
+      - name: "QMail postmaster alias"
+        become: "yes"
+        copy:
+          content: "{{ default_mail_address }}\n"
+          dest: /var/lib/qmail/alias/.qmail-postmaster
+      - name: "QMail root alias"
+        become: "yes"
+        copy:
+          content: "{{ default_mail_address }}\n"
+          dest: /var/lib/qmail/alias/.qmail-root
+
+    #FIXME: basic configuration to kickstart testing & iterating
+    - block:
+      - name: "QMail 'me' domain definition"
+        become: "yes"
+        copy:
+          content: "{{ default_mail_domain }}\n"
+          dest: /var/lib/qmail/control/me
+      - name: "QMail 'locals' domain definition"
+        become: "yes"
+        copy:
+          content: "{{ local_mail_domain }}\n"
+          dest: /var/lib/qmail/control/locals
+      - name: "QMail default domain definition"
+        become: "yes"
+        copy:
+          content: "{{ default_mail_domain }}\n"
+          dest: /var/lib/qmail/control/defaultdomain
+      - name: "QMail rcpthosts definition"
+        become: "yes"
+        copy:
+          content: "{{ default_mail_domain }}\n"
+          dest: /var/lib/qmail/control/rcpthosts
+
+
+          #    - name: "Default tuning configuration"
+          #      block:
+          #        - file:
+          #            src: "/home/{{ default_mail_username }}/QBSWebServer/externals/var.qmail.config/dnsbl_zones"
+          #            dest: "/var/qmail/config/dnsbl_zones"
+          #        - copy:
+          #            src: "/home/{{ default_mail_username }}/QBSWebServer/externals/var.qmail.config/logging"
+          #            dest: "/var/qmail/config/logging"
+          #        - copy:
+          #            src: "/home/{{ default_mail_username }}/QBSWebServer/externals/var.qmail.config/loglevel"
+          #            dest: "/var/qmail/config/loglevel"
+          #        - copy:
+          #            src: "/home/{{ default_mail_username }}/QBSWebServer/externals/var.qmail.config/plugin_dirs"
+          #            dest: "/var/qmail/config/plugin_dirs"
+          #        - copy:
+          #            src: "/home/{{ default_mail_username }}/QBSWebServer/externals/var.qmail.config/plugins"
+          #            dest: "/var/qmail/config/plugins"
+          #        - copy:
+          #            src: "/home/{{ default_mail_username }}/QBSWebServer/externals/var.qmail.config/plugins_backup"
+          #            dest: "/var/qmail/config/plugins_backup"
+          #        - copy:
+          #            src: "/home/{{ default_mail_username }}/QBSWebServer/externals/var.qmail.config/relayclients"
+          #            dest: "/var/qmail/config/relayclients"
+          #        - copy:
+          #            src: "/home/{{ default_mail_username }}/QBSWebServer/externals/var.qmail.config/rhsbl_zones"
+          #            dest: "/var/qmail/config/rhsbl_zones"
+          #        - copy:
+          #            src: "/home/{{ default_mail_username }}/QBSWebServer/externals/var.qmail.config/smtpgreeting"
+          #            dest: "/var/qmail/config/smptgreeting"
+          #        - copy:
+          #            src: "/home/{{ default_mail_username }}/QBSWebServer/externals/var.qmail.config/spool_dir"
+          #            dest: "/var/qmail/config/spool_dir"
+          #        - copy:
+          #            src: "/home/{{ default_mail_username }}/QBSWebServer/externals/var.qmail.config/timeout"
+          #            dest: "/var/qmail/config/timeout"
+          #        - copy:
+          #            src: "/home/{{ default_mail_username }}/QBSWebServer/externals/var.qmail.config/timeoutsmtpd"
+          #            dest: "/var/qmail/config/timeoutsmtpd"
+          #        - copy:
+          #            src: "/home/{{ default_mail_username }}/QBSWebServer/externals/var.qmail.config/whitelistsenders"
+          #            dest: "/var/qmail/config/whitelistsenders"
+          #      become: "yes"
+
+    - name: "supervise symlink configuration"
+      become: "yes"
+      file:
+        path: "/var/lib/supervise"
+        state: "directory"
+
+
+    - name: "qmail service configuration"
+      become: "yes"
+      systemd:
+        enabled: yes
+        name: qmail 
+        daemon_reload: yes
+
+    - name: "install mailutils for testing"
+      become: "yes"
+      apt:
+        name: "mailutils"
+
+    - name: "set up mailbox for user {{ default_mail_username }}"
+      become: "yes"
+      file:
+        path: "/var/mail/{{ default_mail_username }}"
+        state: "touch"
+        owner: "{{ default_mail_username }}"
+
+
+### TODO: implement the below placeholders
+
+### APACHE
+#    - name: "Apache installation"
+#      become: "yes"
+#      apt:
+#        name: "apache2"
+
+### MYSQL
+#    - name: "MySQL installation"
+#      become: "yes"
+#      apt:
+#        name: "mysql-server"
+
+### PostgreSQL 
+#    - name: "PostgresSQL installation"
+#      become: "yes"
+#      apt:
+#        name: "postgresql"
+
 ...
