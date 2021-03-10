@@ -44,20 +44,25 @@ if qbsip == "":
 #Read in the cloud formation, we might generate it in the future, or need to keep it on s3 later
 ec2cf = open( '/root/src/EC2InstanceWithSecurityGroupSample.template' , 'r').read()
 
+#TODO: fix this into a proper global variable config
+#this is used later on to connect, changing so that filename and AWS entry are the same
+keyname="webmail"
 
 #Create the CloudFormation for the EC2 Instance
 stackname = 'qbswebserver' + str(int(epoch))
 print('Creating stack id ' + stackname)
-response = cf_client.create_stack(
-    StackName=stackname,
-    TemplateBody=ec2cf,
-    Parameters=[
-        { 'ParameterKey': 'KeyName', 'ParameterValue': 'webmail' },
-        { 'ParameterKey': 'InstanceType', 'ParameterValue': 't2.micro' },
-    ],
-    OnFailure='ROLLBACK'
-)
-
+try:
+    response = cf_client.create_stack(
+        StackName=stackname,
+        TemplateBody=ec2cf,
+        Parameters=[
+            { 'ParameterKey': 'KeyName', 'ParameterValue': keyname },
+            { 'ParameterKey': 'InstanceType', 'ParameterValue': 't2.micro' },
+        ],
+        OnFailure='ROLLBACK'
+    )
+except Exception as e:
+    print("Stack creation response: %s" % e)
 
 print('##################################################################################################')
 print('RESPONSE FROM CREATE:')
@@ -70,6 +75,7 @@ stackstatus = "CREATE_IN_PROGRESS"
 while (stackstatus == 'CREATE_IN_PROGRESS'):
 	time.sleep(5)
 	response = cf_client.describe_stacks( StackName=stackname) 
+	print(response)
 	stackstatus = response['Stacks'][0]['StackStatus']
 	print("----Checking Creation Status: " + stackstatus)
 
@@ -104,8 +110,8 @@ print('#########################################################################
 
 
 #####install ansible
-time.sleep(15) #Wait for SSH Deamon to come up
-connectstr = ' -o StrictHostKeyChecking=no  -i ~/.ssh/qbsweb1.pem '
+time.sleep(120) #Wait for SSH Deamon to come up
+connectstr = ' -o StrictHostKeyChecking=no  -i ~/.ssh/%s.pem ' % keyname
 connecthost = ' ubuntu@' + hostip 
 sshconnectstr = 'ssh ' + connectstr + ' ' + connecthost
 scpconnectstr = 'scp ' + connectstr

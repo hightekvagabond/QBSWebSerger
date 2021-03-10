@@ -1,0 +1,12 @@
+[Unit]
+Description=svscan service
+After=local-fs.target network.target
+
+[Service]
+ExecStart=/usr/bin/svscanboot
+ExecStop=/usr/bin/pkill -f svscanboot
+Type=simple
+NonBlocking=yes
+
+[Install]
+WantedBy=multi-user.target
